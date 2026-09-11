@@ -8,6 +8,8 @@ import (
 	"math"
 	"unicode/utf8"
 
+	"golang.org/x/text/unicode/bidi"
+
 	"github.com/carlos7ags/folio/content"
 	"github.com/carlos7ags/folio/font"
 	folioimage "github.com/carlos7ags/folio/image"
@@ -286,6 +288,31 @@ func drawWordStandard(stream *content.Stream, word Word) {
 	stream.ShowTextArray(elements)
 }
 
+func isRTLWord(text string) bool {
+	for _, r := range text {
+		props, _ := bidi.LookupRune(r)
+		switch props.Class() {
+		case bidi.R, bidi.AL:
+			return true
+		case bidi.L:
+			return false
+		}
+	}
+	return false
+}
+
+func reverseGraphemeClusters(text string) string {
+	breaks := grapheme.Breaks(text)
+	if len(breaks) <= 2 {
+		return text
+	}
+	out := make([]byte, 0, len(text))
+	for i := len(breaks) - 2; i >= 0; i-- {
+		out = append(out, text[breaks[i]:breaks[i+1]]...)
+	}
+	return string(out)
+}
+
 // drawWordEmbedded emits an embedded-font word with optional TJ kerning.
 // When the word contains any Extend / ZWJ combining marks and the font's
 // GPOS table provides mark-to-base anchors, the emission path switches to
@@ -319,6 +346,13 @@ func drawWordEmbedded(stream *content.Stream, word Word) {
 			return
 		}
 		stream.ShowTextHex(word.Embedded.EncodeGIDs(word.GIDs, word.OriginalText))
+		return
+	}
+	if isRTLWord(word.Text) {
+		visualText := reverseGraphemeClusters(word.Text)
+		stream.ShowTextHex(
+			word.Embedded.EncodeString(visualText),
+		)
 		return
 	}
 	if markPositioningEligible(word) {
